@@ -1,0 +1,139 @@
+var Seatalk = {
+    params: {},
+
+    setParams: function (params) {
+        if (typeof params !== 'object') {
+            return;
+        }
+
+        Seatalk.params = params;
+
+        // Memastikan URL API dan endpoint sudah diset dengan benar
+        if (Seatalk.params.url && Seatalk.params.api_url) {
+            if (!Seatalk.params.url.endsWith('/')) {
+                Seatalk.params.url += '/';
+            }
+            if (Seatalk.params.api_url.startsWith('/')) {
+                Seatalk.params.api_url = Seatalk.params.api_url.substring(1);
+            }
+
+            // Gabungkan URL dasar dengan endpoint API
+            Seatalk.params.url += Seatalk.params.api_url;
+        }
+    },
+
+    request: function (method, query, data) {
+        // Memeriksa apakah parameter penting telah diset
+        ['url', 'api_url', 'group_id'].forEach(function (field) {
+            if (typeof Seatalk.params !== 'object' || typeof Seatalk.params[field] === 'undefined'
+                    || Seatalk.params[field] === '') {
+                throw 'Required parameter is not set: "' + field + '".';
+            }
+        });
+
+        var response,
+            url = Seatalk.params.url + '/' + query, // Menambahkan '/' antara url dasar dan query
+            request = new HttpRequest();
+
+        request.addHeader('Content-Type: application/json');
+
+        // Menambahkan proxy jika diset
+        if (typeof Seatalk.params.HTTPProxy !== 'undefined' && Seatalk.params.HTTPProxy !== '') {
+            request.setProxy(Seatalk.params.HTTPProxy);
+        }
+
+        // Menyusun data dalam format JSON
+        if (typeof data !== 'undefined') {
+            data = JSON.stringify(data);
+        }
+
+        // Mengirim request dan melakukan logging
+        Zabbix.log(4, '[ Seatalk Webhook ] Sending request: ' + url +
+            ((typeof data === 'string') ? ('\n' + data) : ''));
+
+        // Mengirimkan POST request
+        switch (method) {
+            case 'post':
+                response = request.post(url, data);
+                break;
+
+            default:
+                throw 'Unsupported HTTP request method: ' + method;
+        }
+
+        Zabbix.log(4, '[ Seatalk Webhook ] Received response with status code ' +
+            request.getStatus() + '\n' + response);
+
+        if (response !== null) {
+            try {
+                response = JSON.parse(response);
+            }
+            catch (error) {
+                Zabbix.log(4, '[ Seatalk Webhook ] Failed to parse response received from Seatalk');
+                response = null;
+            }
+        }
+
+        // Memeriksa status code response
+        if (request.getStatus() < 200 || request.getStatus() >= 300) {
+            var message = 'Request failed with status code ' + request.getStatus();
+
+            if (response !== null && typeof response.message !== 'undefined') {
+                message += ': ' + JSON.stringify(response.message);
+            }
+            else if (response !== null && typeof response.error !== 'undefined') {
+                message += ': ' + JSON.stringify(response.error);
+            }
+
+            throw message + '. Check debug log for more information.';
+        }
+
+        return {
+            status: request.getStatus(),
+            response: response
+        };
+    },
+
+    // Fungsi untuk mengirimkan pesan ke Seatalk
+    sendMessage: function (groupId, alertMessage) {
+        if (!alertMessage || alertMessage.trim() === '') {
+            throw 'ALERT_MESSAGE cannot be empty';
+        }
+
+        var data = {
+            tag: "text",   // Menambahkan tag sesuai dengan contoh yang diberikan
+            text: {        // Menambahkan konten pesan
+                content: alertMessage
+            }
+        };
+
+        var result = Seatalk.request('post', 'group/' + groupId, data); // Mengirim ke group/{GROUP_ID}
+        return result;
+    }
+};
+
+try {
+    var params = JSON.parse(value),
+        result = {};
+
+    // Memastikan bahwa GROUP_ID dan ALERT_MESSAGE ada dalam parameter
+    if (params.GROUP_ID === '' || params.ALERT_MESSAGE === '') {
+        throw 'GROUP_ID or ALERT_MESSAGE cannot be empty';
+    }
+
+    // Mengatur parameter untuk Seatalk
+    Seatalk.setParams({
+        url: 'https://openapi.seatalk.io/',    // URL dasar Seatalk API
+        api_url: 'webhook',                    // Endpoint API untuk webhook (hanya 'webhook')
+        group_id: params.GROUP_ID,             // ID Grup Seatalk
+        alert_message: params.ALERT_MESSAGE  // Pesan yang ingin dikirimkan
+    });
+
+    // Mengirimkan pesan ke Seatalk
+    result = Seatalk.sendMessage(params.GROUP_ID, params.ALERT_MESSAGE);
+
+    return JSON.stringify(result);
+} catch (error) {
+    Zabbix.log(3, '[ Seatalk Webhook ] ERROR: ' + error);
+    throw 'Sending failed: ' + error;
+}
