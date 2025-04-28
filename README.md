@@ -15,13 +15,3 @@ To use this script, you need to provide the following parameters:
 
 - `ALERT_MESSAGE`: The message you want to send to the group.
 - `GROUP_ID`: The identifier of the Seatalk group where the alert will be posted.
-
-### Example Command
-
-Here's an example of how to use the script:
-
-```bash
-curl -i -X POST -H 'Content-Type: application/json' -d '{
-    "ALERT_MESSAGE": "Disk usage is over 90%",
-    "GROUP_ID": "pv84sS8nTxqHfMfKuCvpQg"
-}' https://openapi.seatalk.io/webhook/group/{GROUP_ID}
